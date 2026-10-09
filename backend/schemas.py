@@ -16,6 +16,7 @@ class BotUpsert(BaseModel):
     ark_api_key: str
     ark_model_id: str = "doubao-pro-4k"
     vision_model_id: Optional[str] = ""
+    base_url: Optional[str] = "https://ark.cn-beijing.volces.com/api/v3"
     system_prompt: str = ""
     temperature: float = 0.7
     max_tokens: int = 2048

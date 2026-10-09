@@ -33,6 +33,7 @@ def bot_list(keyword: str = "", db: Session = Depends(get_db),
             "id": b.id, "bot_name": b.bot_name,
             "tg_bot_token": _mask_token(b.tg_bot_token),
             "ark_model_id": b.ark_model_id, "vision_model_id": b.vision_model_id or "",
+            "base_url": b.base_url or "",
             "bot_switch": b.bot_switch, "stream_enable": b.stream_enable,
             "today_requests": s[0], "today_tokens": s[1],
             "description": b.description,
@@ -67,6 +68,7 @@ def update_bot(bid: int, body: BotUpsert, db: Session = Depends(get_db),
     row.bot_name = body.bot_name
     row.ark_model_id = body.ark_model_id
     row.vision_model_id = body.vision_model_id or ""
+    row.base_url = body.base_url or "https://ark.cn-beijing.volces.com/api/v3"
     row.system_prompt = body.system_prompt
     row.temperature = body.temperature
     row.max_tokens = body.max_tokens

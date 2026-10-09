@@ -266,9 +266,10 @@
     <el-form label-width="130px">
       <el-form-item label="Bot名称"><el-input v-model="botDialog.form.bot_name"></el-input></el-form-item>
       <el-form-item label="Telegram Token"><el-input v-model="botDialog.form.tg_bot_token" placeholder="BotFather 获取"></el-input></el-form-item>
-      <el-form-item label="方舟 API Key"><el-input v-model="botDialog.form.ark_api_key" placeholder="sk-..."></el-input></el-form-item>
-      <el-form-item label="模型ID"><el-input v-model="botDialog.form.ark_model_id" placeholder="doubao-pro-4k"></el-input></el-form-item>
-      <el-form-item label="视觉模型ID"><el-input v-model="botDialog.form.vision_model_id" placeholder="doubao-vision-pro-32k（用于识图，留关则不支持图片）"></el-input></el-form-item>
+      <el-form-item label="模型 API Key"><el-input v-model="botDialog.form.ark_api_key" placeholder="sk-..."></el-input></el-form-item>
+      <el-form-item label="接口地址 BaseURL"><el-input v-model="botDialog.form.base_url" placeholder="https://ark.cn-beijing.volces.com/api/v3（DeepSeek 填 https://api.deepseek.com）"></el-input></el-form-item>
+      <el-form-item label="模型ID"><el-input v-model="botDialog.form.ark_model_id" placeholder="deepseek-chat / doubao-pro-4k"></el-input></el-form-item>
+      <el-form-item label="视觉模型ID"><el-input v-model="botDialog.form.vision_model_id" placeholder="deepseek-vl（用于识图，留空则不支持图片）"></el-input></el-form-item>
       <el-form-item label="System提示词"><el-input type="textarea" :rows="3" v-model="botDialog.form.system_prompt"></el-input></el-form-item>
       <el-row :gutter="12">
         <el-col :span="8"><el-form-item label="temperature"><el-input-number v-model="botDialog.form.temperature" :min="0" :max="2" :step="0.1"></el-input-number></el-form-item></el-col>
@@ -327,7 +328,8 @@ createApp({
     const botList = ref([]);
     const botQuery = reactive({ keyword: "" });
     const botDialog = reactive({ visible:false, form:{ id:null, bot_name:"", tg_bot_token:"",
-      ark_api_key:"", ark_model_id:"doubao-pro-4k", vision_model_id:"", system_prompt:"", temperature:0.7,
+      ark_api_key:"", ark_model_id:"deepseek-chat", vision_model_id:"deepseek-vl",
+      base_url:"https://api.deepseek.com", system_prompt:"", temperature:0.7,
       max_tokens:2048, user_max_context_len:10, description:"", stream_enable:false, bot_switch:true } });
     const botOptions = ref([]);
 
@@ -409,6 +411,7 @@ createApp({
       if (row) {
         Object.assign(botDialog.form, { id:row.id, bot_name:row.bot_name,
           ark_model_id:row.ark_model_id, vision_model_id:row.vision_model_id||"",
+          base_url:row.base_url||"https://ark.cn-beijing.volces.com/api/v3",
           stream_enable:!!row.stream_enable,
           description:row.description, bot_switch:row.bot_switch });
         // token/key 编辑时需重新填写（列表已脱敏）
@@ -416,7 +419,8 @@ createApp({
         botDialog.form.ark_api_key = "";
       } else {
         Object.assign(botDialog.form, { id:null, bot_name:"", tg_bot_token:"", ark_api_key:"",
-          ark_model_id:"doubao-pro-4k", vision_model_id:"", system_prompt:"",
+          ark_model_id:"deepseek-chat", vision_model_id:"deepseek-vl",
+          base_url:"https://api.deepseek.com", system_prompt:"",
           temperature:0.7, max_tokens:2048,
           user_max_context_len:10, description:"", stream_enable:false, bot_switch:true });
       }

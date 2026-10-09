@@ -25,6 +25,9 @@ def run_migrations():
     with engine.begin() as conn:
         if "vision_model_id" not in cols:
             conn.execute(text("ALTER TABLE bot ADD COLUMN vision_model_id VARCHAR(100) DEFAULT ''"))
+        if "base_url" not in cols:
+            conn.execute(text("ALTER TABLE bot ADD COLUMN base_url VARCHAR(200) "
+                              "DEFAULT 'https://ark.cn-beijing.volces.com/api/v3'"))
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):

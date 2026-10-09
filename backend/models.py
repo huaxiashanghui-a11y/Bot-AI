@@ -22,6 +22,8 @@ class Bot(Base):
     ark_api_key = Column(String(200), nullable=False)
     ark_model_id = Column(String(100), nullable=False, default="doubao-pro-4k")
     vision_model_id = Column(String(100), nullable=True, default="")
+    base_url = Column(String(200), nullable=False,
+                      default="https://ark.cn-beijing.volces.com/api/v3")
     system_prompt = Column(Text, default="")
     temperature = Column(Float, default=0.7)
     max_tokens = Column(Integer, default=2048)

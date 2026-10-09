@@ -187,18 +187,19 @@ async def _on_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         api_key, model = cfg.ark_api_key, cfg.ark_model_id
         temperature, max_tokens = cfg.temperature, cfg.max_tokens
         use_stream = cfg.stream_enable
+        base_url = cfg.base_url or ""
     finally:
         db.close()
 
     if use_stream:
         full, final_usage = await _reply_streaming(update, messages, api_key, model,
-                                                   temperature, max_tokens)
+                                                   temperature, max_tokens, base_url)
         if not full:
             return
     else:
         try:
             full, final_usage = await doubao_client.chat(messages, api_key, model,
-                                                        temperature, max_tokens)
+                                                        temperature, max_tokens, base_url)
         except Exception as e:
             await update.message.reply_text(f"AI 服务暂时不可用：{type(e).__name__}")
             return
@@ -206,7 +207,7 @@ async def _on_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     _record_usage(bot_id, tg_user.id, full, final_usage)
 
-async def _reply_streaming(update, messages, api_key, model, temperature, max_tokens):
+async def _reply_streaming(update, messages, api_key, model, temperature, max_tokens, base_url=""):
     """流式：先回一条占位消息，再定时编辑更新，模拟打字效果。返回(完整文本, usage)。"""
     sent = await update.message.reply_text("…")
     full = ""
@@ -215,7 +216,7 @@ async def _reply_streaming(update, messages, api_key, model, temperature, max_to
     final_usage = None
     try:
         async for delta, usage in doubao_client.chat_stream(messages, api_key, model,
-                                                            temperature, max_tokens):
+                                                            temperature, max_tokens, base_url):
             if usage:
                 final_usage = usage
             if delta:
@@ -289,12 +290,13 @@ async def _on_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         db.commit()
         api_key, vmodel = cfg.ark_api_key, cfg.vision_model_id
         temperature, max_tokens = cfg.temperature, cfg.max_tokens
+        base_url = cfg.base_url or ""
     finally:
         db.close()
 
     try:
         reply, usage = await doubao_client.chat_vision(messages, api_key, vmodel,
-                                                     temperature, max_tokens)
+                                                     temperature, max_tokens, base_url)
     except Exception as e:
         await update.message.reply_text(f"识图服务不可用：{type(e).__name__}")
         return
