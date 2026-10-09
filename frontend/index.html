@@ -1,0 +1,558 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Bot超级管理后台</title>
+<link rel="stylesheet" href="https://unpkg.com/element-plus/dist/index.css">
+<script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+<script src="https://unpkg.com/element-plus/dist/index.full.min.js"></script>
+<script src="https://unpkg.com/axios/dist/axios.min.js"></script>
+<script src="https://unpkg.com/echarts@5/dist/echarts.min.js"></script>
+<style>
+  html,body,#app{height:100%;margin:0;font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;}
+  .stat-card{display:flex;gap:16px;flex-wrap:wrap;margin-bottom:16px;}
+  .stat-card .el-card{flex:1;min-width:160px;}
+  .num{font-size:26px;font-weight:700;color:#1f2d3d;}
+  .label{color:#909399;font-size:13px;margin-top:4px;}
+  .toolbar{margin-bottom:12px;display:flex;gap:8px;flex-wrap:wrap;align-items:center;}
+  .pager{margin-top:12px;text-align:right;}
+  .chat-content{white-space:pre-wrap;word-break:break-all;max-width:480px;}
+  .role-user{color:#1e40af;}
+  .role-assistant{color:#065f46;}
+</style>
+</head>
+<body>
+<div id="app">
+  <!-- 登录页 -->
+  <div v-if="!token" style="height:100%;display:flex;align-items:center;justify-content:center;background:linear-gradient(135deg,#1e3a8a,#0ea5e9);">
+    <el-card style="width:360px;">
+      <h2 style="text-align:center;margin-top:0;">Bot超级管理后台</h2>
+      <el-form @submit.prevent="doLogin">
+        <el-input v-model="loginForm.username" placeholder="用户名" style="margin-bottom:12px;"></el-input>
+        <el-input v-model="loginForm.password" type="password" placeholder="密码" style="margin-bottom:12px;" @keyup.enter="doLogin"></el-input>
+        <el-button type="primary" style="width:100%;" :loading="logging" @click="doLogin">登 录</el-button>
+      </el-form>
+      <p style="color:#909399;font-size:12px;text-align:center;margin-bottom:0;">默认账号 admin / admin123</p>
+    </el-card>
+  </div>
+
+  <!-- 主界面 -->
+  <el-container v-else style="height:100%;">
+    <el-aside width="210px" style="background:#001529;">
+      <div style="color:#fff;text-align:center;padding:16px 0;font-weight:700;">Bot超级管理后台</div>
+      <el-menu :default-active="activeMenu" background-color="#001529" text-color="#bae1ff" active-text-color="#fff" @select="onMenu">
+        <el-menu-item index="dashboard">数据大盘</el-menu-item>
+        <el-menu-item index="bot">机器人管理</el-menu-item>
+        <el-menu-item index="user">TG用户管理</el-menu-item>
+        <el-menu-item index="chat">对话记录</el-menu-item>
+        <el-menu-item index="stat">Token报表</el-menu-item>
+        <el-menu-item index="system">系统设置</el-menu-item>
+        <el-menu-item index="admin">管理员账号</el-menu-item>
+        <el-menu-item index="log">操作日志</el-menu-item>
+      </el-menu>
+    </el-aside>
+    <el-container>
+      <el-header style="background:#fff;display:flex;justify-content:flex-end;align-items:center;border-bottom:1px solid #eee;">
+        <span style="margin-right:16px;color:#606266;">{{ adminName }}</span>
+        <el-button size="small" @click="logout">退出登录</el-button>
+      </el-header>
+      <el-main style="background:#f0f2f5;">
+
+        <!-- 数据大盘 -->
+        <div v-show="activeMenu==='dashboard'">
+          <div class="stat-card">
+            <el-card><div class="num">{{ sum.today_requests }}</div><div class="label">今日请求数</div></el-card>
+            <el-card><div class="num">{{ sum.today_input_tokens + sum.today_output_tokens }}</div><div class="label">今日Token消耗</div></el-card>
+            <el-card><div class="num">{{ sum.total_bots }} / {{ sum.active_bots }}</div><div class="label">Bot总数 / 运行中</div></el-card>
+            <el-card><div class="num">{{ sum.total_users }}</div><div class="label">TG用户总数</div></el-card>
+            <el-card><div class="num" style="color:#c0392b;">{{ sum.black_users }}</div><div class="label">黑名单用户</div></el-card>
+          </div>
+          <el-card style="margin-bottom:16px;">
+            <h4 style="margin-top:0;">最近7天趋势</h4>
+            <div id="trendChart" style="height:280px;"></div>
+          </el-card>
+          <el-card>
+            <h4 style="margin-top:0;">分Bot今日状态</h4>
+            <el-table :data="botStatList" size="small">
+              <el-table-column prop="bot_name" label="Bot名称"></el-table-column>
+              <el-table-column prop="model" label="模型"></el-table-column>
+              <el-table-column label="状态">
+                <template #default="s">
+                  <el-tag :type="s.row.bot_switch?'success':'info'">{{ s.row.bot_switch?'运行中':'已停用' }}</el-tag>
+                </template>
+              </el-table-column>
+              <el-table-column prop="today_requests" label="今日请求"></el-table-column>
+              <el-table-column prop="today_tokens" label="今日Token"></el-table-column>
+            </el-table>
+          </el-card>
+        </div>
+
+        <!-- 机器人管理 -->
+        <div v-show="activeMenu==='bot'">
+          <div class="toolbar">
+            <el-input v-model="botQuery.keyword" placeholder="按名称搜索" style="width:200px;" clearable @keyup.enter="loadBots"></el-input>
+            <el-button type="primary" @click="loadBots">搜索</el-button>
+            <el-button type="success" @click="openBotDialog()">新增Bot</el-button>
+          </div>
+          <el-table :data="botList" size="small" border>
+            <el-table-column prop="id" label="ID" width="60"></el-table-column>
+            <el-table-column prop="bot_name" label="名称"></el-table-column>
+            <el-table-column prop="ark_model_id" label="模型" width="130"></el-table-column>
+            <el-table-column prop="tg_bot_token" label="TG Token" width="140"></el-table-column>
+            <el-table-column label="开关" width="80">
+              <template #default="s"><el-tag :type="s.row.bot_switch?'success':'danger'">{{ s.row.bot_switch?'开':'关' }}</el-tag></template>
+            </el-table-column>
+            <el-table-column prop="today_requests" label="今日请求" width="90"></el-table-column>
+            <el-table-column prop="today_tokens" label="今日Token" width="100"></el-table-column>
+            <el-table-column label="操作" width="280">
+              <template #default="s">
+                <el-button size="small" @click="openBotDialog(s.row)">编辑</el-button>
+                <el-button size="small" :type="s.row.bot_switch?'warning':'success'" @click="toggleBot(s.row)">{{ s.row.bot_switch?'停用':'启用' }}</el-button>
+                <el-button size="small" @click="restartBot(s.row)">重启</el-button>
+                <el-button size="small" type="danger" @click="delBot(s.row)">删除</el-button>
+              </template>
+            </el-table-column>
+          </el-table>
+        </div>
+
+        <!-- TG用户管理 -->
+        <div v-show="activeMenu==='user'">
+          <div class="toolbar">
+            <el-select v-model="userQuery.bot_id" placeholder="全部Bot" clearable style="width:160px;">
+              <el-option v-for="b in botOptions" :key="b.id" :label="b.bot_name" :value="b.id"></el-option>
+            </el-select>
+            <el-input v-model="userQuery.keyword" placeholder="用户名/姓名" style="width:160px;" clearable></el-input>
+            <el-button type="primary" @click="loadUsers">搜索</el-button>
+          </div>
+          <el-table :data="userList" size="small" border>
+            <el-table-column prop="id" label="ID" width="60"></el-table-column>
+            <el-table-column prop="bot_name" label="所属Bot" width="120"></el-table-column>
+            <el-table-column prop="tg_user_id" label="TG用户ID" width="110"></el-table-column>
+            <el-table-column prop="username" label="用户名"></el-table-column>
+            <el-table-column prop="first_name" label="姓名"></el-table-column>
+            <el-table-column label="黑名单" width="80">
+              <template #default="s"><el-tag :type="s.row.is_black?'danger':'success'">{{ s.row.is_black?'是':'否' }}</el-tag></template>
+            </el-table-column>
+            <el-table-column prop="total_token_used" label="累计Token" width="100"></el-table-column>
+            <el-table-column prop="remain_quota" label="剩余额度" width="90"></el-table-column>
+            <el-table-column label="操作" width="240">
+              <template #default="s">
+                <el-button size="small" @click="showUserDetail(s.row)">详情</el-button>
+                <el-button size="small" :type="s.row.is_black?'success':'warning'" @click="toggleBlack(s.row)">{{ s.row.is_black?'解黑':'拉黑' }}</el-button>
+                <el-button size="small" @click="openQuota(s.row)">改额度</el-button>
+              </template>
+            </el-table-column>
+          </el-table>
+          <div class="pager"><el-pagination layout="prev,pager,next" :total="userTotal" :page-size="20" @current-change="p=>{userQuery.page=p;loadUsers();}"></el-pagination></div>
+        </div>
+
+        <!-- 对话记录 -->
+        <div v-show="activeMenu==='chat'">
+          <div class="toolbar">
+            <el-select v-model="chatQuery.bot_id" placeholder="全部Bot" clearable style="width:160px;">
+              <el-option v-for="b in botOptions" :key="b.id" :label="b.bot_name" :value="b.id"></el-option>
+            </el-select>
+            <el-input v-model="chatQuery.tg_user_id" placeholder="TG用户ID" style="width:140px;"></el-input>
+            <el-date-picker v-model="chatRange" type="daterange" range-separator="至" start-placeholder="开始" end-placeholder="结束"></el-date-picker>
+            <el-button type="primary" @click="loadChats">查询</el-button>
+            <el-button @click="exportChats">导出CSV</el-button>
+          </div>
+          <el-table :data="chatList" size="small" border>
+            <el-table-column prop="created_at" label="时间" width="150"></el-table-column>
+            <el-table-column prop="bot_name" label="Bot" width="120"></el-table-column>
+            <el-table-column prop="tg_user_id" label="TG用户" width="110"></el-table-column>
+            <el-table-column label="角色" width="90">
+              <template #default="s"><span :class="s.row.role==='user'?'role-user':'role-assistant'">{{ s.row.role==='user'?'用户':'AI' }}</span></template>
+            </el-table-column>
+            <el-table-column label="内容">
+              <template #default="s"><div class="chat-content">{{ s.row.content }}</div></template>
+            </el-table-column>
+            <el-table-column prop="token_count" label="Token" width="80"></el-table-column>
+          </el-table>
+          <div class="pager"><el-pagination layout="prev,pager,next" :total="chatTotal" :page-size="20" @current-change="p=>{chatQuery.page=p;loadChats();}"></el-pagination></div>
+        </div>
+
+        <!-- Token报表 -->
+        <div v-show="activeMenu==='stat'">
+          <div class="toolbar">
+            <el-select v-model="statQuery.bot_id" placeholder="全部Bot" clearable style="width:160px;">
+              <el-option v-for="b in botOptions" :key="b.id" :label="b.bot_name" :value="b.id"></el-option>
+            </el-select>
+            <el-button type="primary" @click="loadStats">查询</el-button>
+            <el-button @click="exportStats">导出CSV</el-button>
+          </div>
+          <el-table :data="statList" size="small" border>
+            <el-table-column prop="stat_date" label="日期" width="120"></el-table-column>
+            <el-table-column prop="bot_name" label="Bot" width="140"></el-table-column>
+            <el-table-column prop="input_tokens" label="输入Token"></el-table-column>
+            <el-table-column prop="output_tokens" label="输出Token"></el-table-column>
+            <el-table-column prop="total_tokens" label="合计"></el-table-column>
+            <el-table-column prop="requests" label="请求数"></el-table-column>
+          </el-table>
+        </div>
+
+        <!-- 系统设置 -->
+        <div v-show="activeMenu==='system'">
+          <el-card style="max-width:600px;margin-bottom:16px;">
+            <h4 style="margin-top:0;">全局参数</h4>
+            <el-form label-width="160px">
+              <el-form-item label="新用户默认额度">
+                <el-input v-model.number="sysConfig.default_user_quota"></el-input>
+              </el-form-item>
+              <el-form-item label="单Bot日消耗上限">
+                <el-input v-model.number="sysConfig.daily_bot_quota"></el-input>
+              </el-form-item>
+              <el-form-item label="余额告警阈值">
+                <el-input v-model.number="sysConfig.alert_balance_threshold"></el-input>
+              </el-form-item>
+              <el-button type="primary" @click="saveSysConfig">保存</el-button>
+            </el-form>
+          </el-card>
+          <el-card style="max-width:600px;">
+            <h4 style="margin-top:0;">全局屏蔽关键词</h4>
+            <div class="toolbar">
+              <el-input v-model="newKeyword" placeholder="输入关键词" style="width:220px;"></el-input>
+              <el-button type="primary" @click="addKeyword">添加</el-button>
+            </div>
+            <el-table :data="keywordList" size="small" border>
+              <el-table-column prop="id" label="ID" width="60"></el-table-column>
+              <el-table-column prop="word" label="关键词"></el-table-column>
+              <el-table-column label="操作" width="100">
+                <template #default="s"><el-button size="small" type="danger" @click="delKeyword(s.row)">删除</el-button></template>
+              </el-table-column>
+            </el-table>
+          </el-card>
+        </div>
+
+        <!-- 管理员账号 -->
+        <div v-show="activeMenu==='admin'">
+          <div class="toolbar"><el-button type="primary" @click="openAdminDialog()">新增管理员</el-button></div>
+          <el-table :data="adminList" size="small" border>
+            <el-table-column prop="id" label="ID" width="60"></el-table-column>
+            <el-table-column prop="username" label="用户名"></el-table-column>
+            <el-table-column prop="name" label="姓名"></el-table-column>
+            <el-table-column label="状态" width="100">
+              <template #default="s"><el-tag :type="s.row.is_enable?'success':'danger'">{{ s.row.is_enable?'启用':'禁用' }}</el-tag></template>
+            </el-table-column>
+            <el-table-column prop="created_at" label="创建时间"></el-table-column>
+            <el-table-column label="操作" width="240">
+              <template #default="s">
+                <el-button size="small" @click="openAdminDialog(s.row)">改密/编辑</el-button>
+                <el-button size="small" :type="s.row.is_enable?'warning':'success'" @click="toggleAdmin(s.row)">{{ s.row.is_enable?'禁用':'启用' }}</el-button>
+                <el-button size="small" type="danger" @click="delAdmin(s.row)">删除</el-button>
+              </template>
+            </el-table-column>
+          </el-table>
+        </div>
+
+        <!-- 操作日志 -->
+        <div v-show="activeMenu==='log'">
+          <el-table :data="logList" size="small" border>
+            <el-table-column prop="created_at" label="时间" width="160"></el-table-column>
+            <el-table-column prop="admin_name" label="操作人" width="120"></el-table-column>
+            <el-table-column prop="action" label="操作" width="160"></el-table-column>
+            <el-table-column prop="detail" label="详情"></el-table-column>
+          </el-table>
+          <div class="pager"><el-pagination layout="prev,pager,next" :total="logTotal" :page-size="20" @current-change="p=>{loadLogs(p);}"></el-pagination></div>
+        </div>
+
+      </el-main>
+    </el-container>
+  </el-container>
+
+  <!-- Bot 编辑对话框 -->
+  <el-dialog v-model="botDialog.visible" :title="botDialog.form.id?'编辑Bot':'新增Bot'" width="640px">
+    <el-form label-width="130px">
+      <el-form-item label="Bot名称"><el-input v-model="botDialog.form.bot_name"></el-input></el-form-item>
+      <el-form-item label="Telegram Token"><el-input v-model="botDialog.form.tg_bot_token" placeholder="BotFather 获取"></el-input></el-form-item>
+      <el-form-item label="方舟 API Key"><el-input v-model="botDialog.form.ark_api_key" placeholder="sk-..."></el-input></el-form-item>
+      <el-form-item label="模型ID"><el-input v-model="botDialog.form.ark_model_id" placeholder="doubao-pro-4k"></el-input></el-form-item>
+      <el-form-item label="视觉模型ID"><el-input v-model="botDialog.form.vision_model_id" placeholder="doubao-vision-pro-32k（用于识图，留关则不支持图片）"></el-input></el-form-item>
+      <el-form-item label="System提示词"><el-input type="textarea" :rows="3" v-model="botDialog.form.system_prompt"></el-input></el-form-item>
+      <el-row :gutter="12">
+        <el-col :span="8"><el-form-item label="temperature"><el-input-number v-model="botDialog.form.temperature" :min="0" :max="2" :step="0.1"></el-input-number></el-form-item></el-col>
+        <el-col :span="8"><el-form-item label="max_tokens"><el-input-number v-model="botDialog.form.max_tokens" :min="256" :max="8192" :step="256"></el-input-number></el-form-item></el-col>
+        <el-col :span="8"><el-form-item label="上下文轮数"><el-input-number v-model="botDialog.form.user_max_context_len" :min="1" :max="50"></el-input-number></el-form-item></el-col>
+      </el-row>
+      <el-form-item label="备注"><el-input v-model="botDialog.form.description"></el-input></el-form-item>
+      <el-form-item label="流式打字效果"><el-switch v-model="botDialog.form.stream_enable"></el-switch></el-form-item>
+      <el-form-item label="启用Bot"><el-switch v-model="botDialog.form.bot_switch"></el-switch></el-form-item>
+    </el-form>
+    <template #footer>
+      <el-button @click="botDialog.visible=false">取消</el-button>
+      <el-button type="primary" @click="saveBot">保存</el-button>
+    </template>
+  </el-dialog>
+
+  <!-- 用户详情抽屉 -->
+  <el-drawer v-model="userDrawer.visible" title="用户对话记录" size="500px">
+    <p v-if="userDrawer.user"><b>TG用户：</b>{{ userDrawer.user.tg_user_id }}　<b>剩余额度：</b>{{ userDrawer.user.remain_quota }}</p>
+    <div v-for="(c,i) in userDrawer.chats" :key="i" style="margin-bottom:10px;">
+      <b :class="c.role==='user'?'role-user':'role-assistant'">{{ c.role==='user'?'用户':'AI' }}</b>
+      <span style="color:#999;font-size:12px;margin-left:8px;">{{ c.created_at }}</span>
+      <div class="chat-content" style="background:#f5f7fa;padding:8px;border-radius:4px;margin-top:4px;">{{ c.content }}</div>
+    </div>
+  </el-drawer>
+</div>
+
+<script>
+const { createApp, ref, reactive, onMounted, nextTick } = Vue;
+
+createApp({
+  setup() {
+    const token = ref(localStorage.getItem("token") || "");
+    const adminName = ref(localStorage.getItem("adminName") || "");
+    const activeMenu = ref("dashboard");
+    const logging = ref(false);
+    const loginForm = reactive({ username: "", password: "" });
+
+    const api = axios.create({ baseURL: "/api" });
+    api.interceptors.request.use(cfg => {
+      if (token.value) cfg.headers.Authorization = "Bearer " + token.value;
+      return cfg;
+    });
+    api.interceptors.response.use(r => r, err => {
+      if (err.response && err.response.status === 401) { logout(); }
+      return Promise.reject(err);
+    });
+    const msg = (t, type="success") => ElementPlus.ElMessage({ message: t, type, duration: 2000 });
+
+    // dashboard
+    const sum = reactive({ today_requests:0, today_input_tokens:0, today_output_tokens:0,
+      total_bots:0, active_bots:0, total_users:0, black_users:0 });
+    const botStatList = ref([]);
+
+    // bot
+    const botList = ref([]);
+    const botQuery = reactive({ keyword: "" });
+    const botDialog = reactive({ visible:false, form:{ id:null, bot_name:"", tg_bot_token:"",
+      ark_api_key:"", ark_model_id:"doubao-pro-4k", vision_model_id:"", system_prompt:"", temperature:0.7,
+      max_tokens:2048, user_max_context_len:10, description:"", stream_enable:false, bot_switch:true } });
+    const botOptions = ref([]);
+
+    // user
+    const userList = ref([]);
+    const userTotal = ref(0);
+    const userQuery = reactive({ bot_id:null, keyword:"", page:1 });
+    const userDrawer = reactive({ visible:false, user:null, chats:[] });
+
+    // chat
+    const chatList = ref([]);
+    const chatTotal = ref(0);
+    const chatQuery = reactive({ bot_id:null, tg_user_id:"", page:1, start:"", end:"" });
+    const chatRange = ref(null);
+
+    // stat
+    const statList = ref([]);
+    const statQuery = reactive({ bot_id:null });
+
+    // system
+    const sysConfig = reactive({ default_user_quota:10000, daily_bot_quota:1000000, alert_balance_threshold:100000 });
+    const keywordList = ref([]);
+    const newKeyword = ref("");
+
+    // admin
+    const adminList = ref([]);
+    const adminDialog = reactive({ visible:false, form:{ id:null, username:"", password:"", name:"" } });
+
+    // log
+    const logList = ref([]);
+    const logTotal = ref(0);
+
+    async function doLogin() {
+      logging.value = true;
+      try {
+        const { data } = await api.post("/admin/login", loginForm);
+        token.value = data.access_token;
+        adminName.value = data.admin.name || data.admin.username;
+        localStorage.setItem("token", token.value);
+        localStorage.setItem("adminName", adminName.value);
+        await loadAll();
+      } catch(e) { msg(e.response?.data?.detail || "登录失败", "error"); }
+      finally { logging.value = false; }
+    }
+    function logout() {
+      token.value = ""; localStorage.clear();
+    }
+
+    async function loadSummary() {
+      const { data } = await api.get("/dashboard/summary");
+      Object.assign(sum, data);
+      const st = await api.get("/dashboard/bot-stats");
+      botStatList.value = st.data.items;
+    }
+    async function loadTrend() {
+      const { data } = await api.get("/dashboard/trend", { params:{ days:7 } });
+      await nextTick();
+      const el = document.getElementById("trendChart");
+      if (!el) return;
+      const chart = echarts.init(el);
+      chart.setOption({
+        tooltip:{ trigger:"axis" },
+        legend:{ data:["请求数","Token消耗"] },
+        xAxis:{ type:"category", data:data.dates },
+        yAxis:[{ type:"value", name:"请求" }, { type:"value", name:"Token" }],
+        series:[
+          { name:"请求数", type:"line", smooth:true, data:data.requests },
+          { name:"Token消耗", type:"bar", yAxisIndex:1, data:data.tokens, itemStyle:{color:"#0ea5e9"} }
+        ]
+      });
+    }
+
+    async function loadBots() {
+      const { data } = await api.get("/bot/list", { params:{ keyword: botQuery.keyword } });
+      botList.value = data.items;
+      botOptions.value = data.items.map(b=>({id:b.id, bot_name:b.bot_name}));
+    }
+    function openBotDialog(row) {
+      if (row) {
+        Object.assign(botDialog.form, { id:row.id, bot_name:row.bot_name,
+          ark_model_id:row.ark_model_id, vision_model_id:row.vision_model_id||"",
+          stream_enable:!!row.stream_enable,
+          description:row.description, bot_switch:row.bot_switch });
+        // token/key 编辑时需重新填写（列表已脱敏）
+        botDialog.form.tg_bot_token = "";
+        botDialog.form.ark_api_key = "";
+      } else {
+        Object.assign(botDialog.form, { id:null, bot_name:"", tg_bot_token:"", ark_api_key:"",
+          ark_model_id:"doubao-pro-4k", vision_model_id:"", system_prompt:"",
+          temperature:0.7, max_tokens:2048,
+          user_max_context_len:10, description:"", stream_enable:false, bot_switch:true });
+      }
+      botDialog.visible = true;
+    }
+    async function saveBot() {
+      const f = botDialog.form;
+      try {
+        if (f.id) {
+          await api.put(`/bot/update/${f.id}`, f);
+        } else {
+          if (!f.tg_bot_token || !f.ark_api_key) { msg("请填写 Telegram Token 和 API Key","error"); return; }
+          await api.post("/bot/add", f);
+        }
+        msg("保存成功"); botDialog.visible=false; loadBots(); loadSummary();
+      } catch(e) { msg(e.response?.data?.detail || "保存失败","error"); }
+    }
+    async function toggleBot(row) {
+      await api.put(`/bot/switch/${row.id}`); msg("已切换"); loadBots(); loadSummary();
+    }
+    async function restartBot(row) {
+      await api.post(`/bot/restart/${row.id}`); msg("已重启");
+    }
+    async function delBot(row) {
+      await ElementPlus.ElMessageBox.confirm("确认删除该Bot？","提示",{type:"warning"});
+      await api.delete(`/bot/delete/${row.id}`); msg("已删除"); loadBots(); loadSummary();
+    }
+
+    async function loadUsers() {
+      const { data } = await api.get("/user/list", { params: userQuery });
+      userList.value = data.items; userTotal.value = data.total;
+    }
+    async function showUserDetail(row) {
+      const { data } = await api.get(`/user/detail/${row.id}`);
+      userDrawer.user = data.user; userDrawer.chats = data.chats; userDrawer.visible = true;
+    }
+    async function toggleBlack(row) {
+      await api.put(`/user/black/${row.id}`); msg("已切换"); loadUsers();
+    }
+    async function openQuota(row) {
+      const { value } = await ElementPlus.ElMessageBox.prompt("输入新的剩余额度", "调整额度",
+        { inputValue: String(row.remain_quota), inputPattern:/^\d+$/ });
+      await api.put(`/user/quota/${row.id}`, { remain_quota: parseInt(value) });
+      msg("已更新"); loadUsers();
+    }
+
+    async function loadChats() {
+      chatQuery.start = chatRange.value ? chatRange.value[0] : "";
+      chatQuery.end = chatRange.value ? chatRange.value[1] : "";
+      const { data } = await api.get("/chat/list", { params: chatQuery });
+      chatList.value = data.items; chatTotal.value = data.total;
+    }
+    function downloadBlob(data, filename) {
+      const url = URL.createObjectURL(new Blob([data]));
+      const a = document.createElement("a");
+      a.href = url; a.download = filename; a.click();
+      URL.revokeObjectURL(url);
+    }
+    async function exportChats() {
+      const { data } = await api.get("/chat/export", { params: chatQuery, responseType:"blob" });
+      downloadBlob(data, "chats.csv");
+    }
+
+    async function loadStats() {
+      const { data } = await api.get("/stat/list", { params: statQuery });
+      statList.value = data.items;
+    }
+    async function exportStats() {
+      const { data } = await api.get("/stat/export", { params: statQuery, responseType:"blob" });
+      downloadBlob(data, "token_stat.csv");
+    }
+
+    async function loadSysConfig() {
+      const { data } = await api.get("/system/config");
+      Object.assign(sysConfig, data.values);
+      const k = await api.get("/system/keywords"); keywordList.value = k.data.items;
+    }
+    async function saveSysConfig() {
+      await api.put("/system/config", { values: sysConfig }); msg("已保存");
+    }
+    async function addKeyword() {
+      if (!newKeyword.value) return;
+      await api.post("/system/keywords", null, { params:{ word: newKeyword.value } });
+      newKeyword.value=""; loadSysConfig();
+    }
+    async function delKeyword(row) {
+      await api.delete(`/system/keywords/${row.id}`); loadSysConfig();
+    }
+
+    async function loadAdmins() {
+      const { data } = await api.get("/admin/list"); adminList.value = data.items;
+    }
+    function openAdminDialog(row) {
+      if (row) Object.assign(adminDialog.form, { id:row.id, username:row.username, name:row.name, password:"" });
+      else Object.assign(adminDialog.form, { id:null, username:"", password:"", name:"" });
+      adminDialog.visible = true;
+    }
+    async function toggleAdmin(row) {
+      await api.put(`/admin/status/${row.id}?is_enable=${!row.is_enable}`); loadAdmins();
+    }
+    async function delAdmin(row) {
+      await api.delete(`/admin/delete/${row.id}`); loadAdmins();
+    }
+
+    async function loadLogs(p=1) {
+      const { data } = await api.get("/log/list", { params:{ page:p } });
+      logList.value = data.items; logTotal.value = data.total;
+    }
+
+    async function onMenu(key) {
+      activeMenu.value = key;
+      if (key==='dashboard') { loadSummary(); loadTrend(); }
+      if (key==='bot') loadBots();
+      if (key==='user') loadUsers();
+      if (key==='chat') loadChats();
+      if (key==='stat') loadStats();
+      if (key==='system') loadSysConfig();
+      if (key==='admin') loadAdmins();
+      if (key==='log') loadLogs();
+    }
+    async function loadAll() {
+      await loadSummary(); loadTrend(); loadBots();
+    }
+
+    onMounted(() => { if (token.value) loadAll(); });
+
+    return { token, adminName, activeMenu, loginForm, logging, doLogin, logout, onMenu,
+      sum, botStatList, botList, botQuery, botDialog, openBotDialog, saveBot, toggleBot,
+      restartBot, delBot, botOptions, userList, userTotal, userQuery, userDrawer,
+      loadUsers, showUserDetail, toggleBlack, openQuota, chatList, chatTotal, chatQuery,
+      chatRange, loadChats, exportChats, statList, statQuery, loadStats, exportStats,
+      sysConfig, keywordList, newKeyword, saveSysConfig, addKeyword, delKeyword,
+      adminList, adminDialog, openAdminDialog, toggleAdmin, delAdmin, loadAdmins,
+      logList, logTotal, loadLogs };
+  }
+}).use(ElementPlus).mount("#app");
+</script>
+</body>
+</html>
